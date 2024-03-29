@@ -1,0 +1,53 @@
+---
+title: "ModelValidation"
+author: "Tiana Schroeder"
+date: "2023-09-18"
+output: html_document
+---
+```{r}
+library(tidyverse)
+library(lubridate)
+library(tidymodels)
+library(dplyr)
+library(GGally)
+```
+
+```{r}
+bike <- library(readr)
+bike_cleaned_4 <- read_csv("bike_cleaned-4.csv")
+```
+```{r}
+bike <- mdy(bike_cleaned_4$dteday)
+bike <- bike_cleaned_4 %>% mutate_if(is.character,as.factor)
+bike <- bike %>% mutate(hr = as_factor(hr))
+```
+
+```{r}
+set.seed(1234)
+bike_split = initial_split(bike, prop = 0.70, strata = count)
+train<-training(bike_split)
+test<-testing(bike_split)
+```
+
+```{r}
+bike_simple_2 = recipe(count ~ season+mnth+hr+holiday+weekday+temp+weathersit,train)
+
+lm_model <-
+  linear_reg()%>%
+  set_engine("lm")
+
+lm_workflow <- workflow() %>%
+  add_model(lm_model)%>%
+  add_recipe(bike_simple_2)
+
+lm_fit <- fit(lm_workflow,train)
+summary(lm_fit$fit$fit$fit)
+```
+
+
+```{r}
+lm_fit %>% predict(test) %>% bind_cols(test) %>% metrics(truth = count, estimate = .pred)
+```
+
+
+
