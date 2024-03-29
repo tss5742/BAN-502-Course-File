@@ -1,0 +1,155 @@
+---
+title: "Module 3: Logistic Regression Classification Assignment Quiz"
+author: "Tiana Schroeder"
+date: "2023-09-18"
+output: html_document
+---
+```{r}
+library(tidymodels)
+library(tidyverse)
+library(e1071)
+library(ROCR)
+library(dplyr)
+```
+
+```{r Before beginning the assignment tasks, you should read in the data for the assignment into a data frame called parole.}
+library(readr)
+parole <- read_csv("parole.csv")
+```
+```{r}
+str(parole)
+summary(parole)
+```
+
+```{r Carefully convert the male, race, state, crime, multiple.offenses, and violator variables to factors. Recode (rename) the factor levels of each of these variables according to the description of the variables provided in the ParoleData.txt file (located with the assignment on Canvas)}
+
+parole = parole %>% mutate(male = as_factor(male)) %>% 
+  mutate(male= fct_recode(male, "Female" = "0", "Male" = "1" )) 
+
+parole = parole %>% mutate(race= as_factor(race))%>%
+  mutate(race = fct_recode(race, "White" = "1", "Otherwise" = "2"))
+
+parole = parole %>% mutate(state= as_factor(state))%>%
+  mutate(state = fct_recode(state, "Kentucky" = "2", "Louisiana" = "3","Virginia" = "4" ))
+
+
+parole = parole %>% mutate(multiple.offenses= as_factor(multiple.offenses)) %>%
+  mutate(multiple.offenses = fct_recode(multiple.offenses, "multiple offenses" = "1", "Otherwise" = "0"))
+
+parole = parole %>% mutate(crime= as_factor(crime)) %>%
+  mutate(crime = fct_recode(crime,"Larceny" = "2", "Drug-Related"="3", "Driving-Related" = "4", "Any other crime" = '1' ))
+
+parole = parole %>% mutate(violator= as_factor(violator)) %>%
+  mutate(violator =fct_recode(violator, "Violated parole" = '1', "Parole completed without violation" = '0'))
+
+str(parole)
+```
+
+```{rThere are 675 parolees in the dataset. How many of these parolees ended up violating parole? HINT: Examine the response variable “violator”}
+summary(parole)
+```
+
+
+```{r Split the data into training and testing sets. Your training set should have 70% of the data.Use a random number (set.seed) of 12345. Be sure that the split is stratified by “violator”}
+set.seed(12345)
+parole_split = initial_split(parole, prop = 0.70, strata = violator)
+train<-training(parole_split)
+test<-testing(parole_split)
+```
+```{r ordering of the levels (categories) in the response variable. The command below shows us the levels of the response variable. We should expect them to be “No” and then “Yes” (in that order) We need the “positive” class (category) to be listed second. Here “Yes” is listed second. “Yes” is our “positive” class as we are interested in building models to detect parolees that violate parole rather than building models with the intent of identifying the parolees that do not violate parole. It seems like a small issue, but it’s an important one. What do we do if the categories are in the incorrect order (this happens sometimes)? We can rearrange the factor levels to put the positive class second (last). The code below accomplishes this. If your levels are properly ordered already, it won’t hurt to run this code. It’s good to keep this code around in case you do need to reorder levels}
+levels(train$violator)
+train=train%>%mutate(violator=fct_relevel(violator,c("No","Yes"))) 
+levels(train$violator)
+```
+
+```{r Create a logistic regression model using the “state” variable to predict “violator”, To two decimal places, what is the AIC of the model with “state” to predict “violator”?}
+parole_mode3 = 
+  logistic_reg(mode = "classification") %>%
+  set_engine("glm")
+
+Parole_Recipe = recipe(violator ~ state, train)
+
+logreg_wf = workflow() %>%
+  add_recipe(Parole_Recipe) %>% 
+  add_model(parole_mode3)
+
+parole_fit3 = fit(logreg_wf, train)
+
+summary(parole_fit3$fit$fit$fit)
+```
+
+```{r Create a logistic regression model using the training set to predict “violator” using the variables:“state”, “multiple.offenses”, and “race” Which variables are significant in the resulting model (select all that are significant)?}
+parole_mode4 = 
+  logistic_reg(mode = "classification") %>%
+  set_engine("glm")
+
+Parole_Recipe_1 = recipe(violator ~ state+multiple.offenses+race, train)
+
+logreg_wf = workflow() %>%
+  add_recipe(Parole_Recipe_1) %>% 
+  add_model(parole_mode4)
+
+parole_fit4 = fit(logreg_wf, train)
+
+summary(parole_fit4$fit$fit$fit)
+```
+
+```{r}
+predictions = predict(parole_fit4, train, type="prob")
+head(predictions)
+```
+```{r}
+predictions = predict(parole_fit4, train, type="prob")[2]
+head(predictions)
+```
+```{r}
+ROCRpred = prediction(predictions, train$violator)
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+```
+```{r}
+as.numeric(performance(ROCRpred, "auc")@y.values)
+```
+
+```{r Continuing to use your model from Question 8, develop an ROC curve and determine the probability threshold that best balances specificity and sensitivity (on the training set). Be sure to be careful with the predict function syntax. What is the value of this threshold (cutoff) (to four decimal places)?}
+opt.cut = function(perf, pred){
+    cut.ind = mapply(FUN=function(x, y, p){
+        d = (x - 0)^2 + (y-1)^2
+        ind = which(d == min(d))
+        c(sensitivity = y[[ind]], specificity = 1-x[[ind]], 
+            cutoff = p[[ind]])
+    }, perf@x.values, perf@y.values, pred@cutoffs)
+}
+print(opt.cut(ROCRperf, ROCRpred))
+```
+
+```{r}
+t1 = table(train$violator,predictions >0.2015788)
+t1
+```
+
+```{r accuracy}
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+```{r sensitivity}
+36/(18+36)
+```
+
+```{r}
+360/(360+57)
+```
+
+```{r using 0.5 threshold find accuracy}
+t1 = table(train$violator,predictions > 0.5)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+```{r probabiltiy The parolee is in Louisiana, has multiple offenses, and is white.}
+dataframe1  <- data.frame(state = c("3"), race = c('1'), multiple.offenses = c('1'))
+
+predictions = predict(parole_fit2, dataframe1, type="prob")
+head(predictions)
+```
+
+
+
